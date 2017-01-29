@@ -6,23 +6,33 @@ import time
 import sys
 import pickle
 from glob import glob
-
+RED = '\x1b[0;31;40m'
+GREEN = '\x1b[0;32;40m'
+END = '\x1b[0m'
 '''
 A tool to parse a Poloniex trade history report and calculate net gain/loss
 in USD.
 '''
 def main():
-    pickles = glob('*.pkl')
+    pickles = glob('.*.pkl')
     if '.buys.pkl' not in pickles or '.sells.pkl' not in pickles:
         (token_buys, token_sells) = collectData('tradeHistory.csv')
     else:
         token_buys = loadPickle('buys')
         token_sells = loadPickle('sells')
     # Calculate gain/loss
+    print '\nYour gains and losses:'
+    print '===================================='
+    gain = 0
     for m in token_buys:
-        if m in token_sells:
-            gains[m] = calculateGainLoss(token_buys[m], token_sells[m])
-    print gains
+       if m in token_sells:
+           coin_gain = calculateGainLoss(token_buys[m], token_sells[m])
+           color = RED if coin_gain < 0 else GREEN
+           print '%s: %s$%.2f'%(m, color, coin_gain) + END
+           gain += coin_gain
+    print '------------------------------------'
+    color = RED if gain < 0 else GREEN
+    print 'Total: %s$%.2f\n'%(color, gain) + END
 
 '''
 Get the data from a tradeHistory csv file.
@@ -35,7 +45,6 @@ def collectData(filename):
         # Dictionaries of lists of costs/revenues (in USD)
         token_buys = dict()
         token_sells = dict()
-        gains = dict()
         # Read the csv file
         reader = csv.reader(f, delimiter=',')
         # Skip headers
@@ -104,20 +113,46 @@ Calculate the gain or loss for a given market
 '''
 def calculateGainLoss(buys, sells):
     gain = 0
-    current_buy = buys.pop(0)
+    # Calculated the weighted average price for buys
+    pq_buy = 0
+    q_buy = 0
+    pq_sell = 0
+    q_sell = 0
+    for buy in buys:
+        pq_buy += buy[0] * buy[1]
+        q_buy += buy[0]
     for sell in sells:
-        while sell[0] > 0 and buys:
-            # Get the quantity and the price
-            q = min(sell[0], current_buy[0])
-            p_diff = sell[1] - current_buy[0]
-            gain += q * p_diff
-            # Subtract the quantities from both the buy and the sell
-            current_buy[0] -= q
-            sell[0] -= q
-            # If the buy has run out, add a new one
-            if current_buy[0] == 0:
-                current_buy = buys.pop(0)
-    return gain
+        pq_sell += sell[0] * sell[1]
+        q_sell += sell[0]
+    # Weighted average prices
+    buy_wap = pq_buy / q_buy
+    sell_wap = pq_sell / q_sell
+    # Total cost basis is WAP * quantity
+    return (sell_wap * q_sell) - (buy_wap * q_buy)
+
+    # Use a FIFO stack for buys
+    # current_buy = buys.pop(0)
+    # for sell in sells:
+    #     while sell[0] > 0 and buys:
+    #         # Get the quantity and the price
+    #         q = min(sell[0], current_buy[0])
+    #         p_diff = sell[1] - current_buy[1]
+    #         print('current_buy', current_buy)
+    #         print('sell', sell)
+    #         print('q',q,'p_diff',p_diff)
+    #         # The gain is calculated as the difference in sell vs buy price
+    #         # times the quantity.
+    #         # e.g. if I bought 1 BTC worth of ETH when BTC was worth $500
+    #         # and then sold 1.5 BTC worth of ETH when BTC was worth $900,
+    #         # The amount would be 1 BTC and the gain would be $400. The
+    #         # remaining 0.5 BTC would roll over to match with the next buy.
+    #         gain += q * p_diff
+    #         # Subtract the quantities from both the buy and the sell
+    #         current_buy[0] -= q
+    #         sell[0] -= q
+    #         # If the buy has run out, add a new one
+    #         if current_buy[0] == 0:
+    #             current_buy = buys.pop(0)
 
 '''
 Parse the order. It will be added to the appropriate stack.
