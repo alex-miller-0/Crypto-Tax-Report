@@ -9,6 +9,7 @@ from glob import glob
 
 '''
 A tool to parse a Poloniex trade history report and calculate net gain/loss
+in USD.
 '''
 def main():
     pickles = glob('*.pkl')
@@ -25,6 +26,9 @@ def main():
 
 '''
 Get the data from a tradeHistory csv file.
+@param {string} filename  - name of the file relative to this directory
+@returns {tuple}          - (token_buys, token_sells), both lists of lists
+                            containing [btc_amount, usd_price]
 '''
 def collectData(filename):
     with open(filename, 'rb') as f:
@@ -74,13 +78,18 @@ def collectData(filename):
 
 '''
 Save a pickle file with a dictionary
+@param {dict} d       - dictionary with your data
+@param {string} name  - name of the file you want to save (will be suffixed
+                        with .pkl and will be a hidden file)
 '''
 def savePickle(d, name):
-    with open('.%s.pkl'%d, 'wb') as handle:
+    with open('.%s.pkl'%name, 'wb') as handle:
         pickle.dump(d, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 '''
 Load a dictionary from a pickle file
+@param {string} name   - filename of .pkl hidden file
+@returns {dict}        - dictionary with your data
 '''
 def loadPickle(name):
     with open('.%s.pkl'%name, 'rb') as handle:
@@ -99,12 +108,12 @@ def calculateGainLoss(buys, sells):
     for sell in sells:
         while sell[0] > 0 and buys:
             # Get the quantity and the price
-            q_diff = min(sell[0], current_buy[0])
+            q = min(sell[0], current_buy[0])
             p_diff = sell[1] - current_buy[0]
-            gain += q_diff * p_diff
+            gain += q * p_diff
             # Subtract the quantities from both the buy and the sell
-            current_buy[0] -= q_diff
-            sell[0] -= q_diff
+            current_buy[0] -= q
+            sell[0] -= q
             # If the buy has run out, add a new one
             if current_buy[0] == 0:
                 current_buy = buys.pop(0)
