@@ -11,7 +11,7 @@ This assumes that all trades are in BTC markets (those in other markets are thro
 
 1. Download your trade history from Poloniex. You will get a file called `tradeHistory.csv`.
 2. Move that csv file to this directory and rename it to `poloniex.csv`
-3. Run `python poloReport.py`
+3. Run `python poloniex.py`
 
 ## Coinbase/GDAX
 
