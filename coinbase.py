@@ -105,8 +105,6 @@ Calculate the gain or loss for a given market
 @returns {float}      - in USD; positive for gain, negative for loss
 '''
 def calculateGainLoss(buys, sells):
-    print buys
-    print sells
     gain = 0
     # Calculated the weighted average price for buys
     buy_p = buys[0][1]
