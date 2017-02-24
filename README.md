@@ -15,7 +15,7 @@ This assumes that all trades are in BTC markets (those in other markets are thro
 
 ## Coinbase/GDAX
 
-This assumes you downloaded a report for your BTC wallet and that all trades are in BTC. It also assumes all trades are made in less than 1 year (i.e. subject to short term cap gains).
+This assumes you downloaded a report for your BTC wallet and that all trades are in BTC. It also assumes all trades are made in less than 1 year (i.e. subject to short term cap gains). Note that Coinbase treats withdrawls as sales and they are thus taxed at the spot price when the withdrawl occured.
 
 **Usage**
 
