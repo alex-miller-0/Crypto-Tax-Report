@@ -14,29 +14,25 @@ RED = '\x1b[0;31;40m'
 GREEN = '\x1b[0;32;40m'
 END = '\x1b[0m'
 '''
-A tool to parse a Poloniex trade history report and calculate net gain/loss
+A tool to parse a Coinbase trade history report and calculate net gain/loss
 in USD.
 '''
 def main():
     pickles = glob('.*.pkl')
-    if '.buys.pkl' not in pickles or '.sells.pkl' not in pickles:
-        (token_buys, token_sells) = collectData('tradeHistory.csv')
+    if '.coinbase_buys.pkl' not in pickles or '.coinbase_sells.pkl' not in pickles:
+        (btc_buys, btc_sells) = collectData('coinbase.csv')
     else:
-        token_buys = loadPickle('buys')
-        token_sells = loadPickle('sells')
+        btc_buys = loadPickle('coinbase_buys')
+        btc_sells = loadPickle('coinbase_sells')
     # Calculate gain/loss
     print '\nYour gains and losses:'
     print '===================================='
     gain = 0
-    for m in token_buys:
-       if m in token_sells:
-           coin_gain = calculateGainLoss(token_buys[m], token_sells[m])
-           color = RED if coin_gain < 0 else GREEN
-           print '%s: %s$%.2f'%(m, color, coin_gain) + END
-           gain += coin_gain
+    fiat_gain = calculateGainLoss(btc_buys, btc_sells)
+    color = RED if fiat_gain < 0 else GREEN
+    plus = 'gain' if fiat_gain > 0 else 'loss'
+    print 'Coinbase %s from BTC wallet: %s$%.2f'%(plus, color, fiat_gain) + END
     print '------------------------------------'
-    color = RED if gain < 0 else GREEN
-    print 'Total: %s$%.2f\n'%(color, gain) + END
 
 '''
 Get the data from a tradeHistory csv file.
@@ -47,47 +43,40 @@ Get the data from a tradeHistory csv file.
 def collectData(filename):
     with open(filename, 'rb') as f:
         # Dictionaries of lists of costs/revenues (in USD)
-        token_buys = dict()
-        token_sells = dict()
+        btc_buys = list()
+        btc_sells = list()
         # Read the csv file
         reader = csv.reader(f, delimiter=',')
         # Skip headers
         next(reader)
+        # Read rows in reverse order
         rows = list(reversed(list(reader)))
         # Print a progress bar
         print 'Parsing trades and getting reference prices...'
         L = 100                         # Total size of the progress bar
-        _i = int((len(rows) + 1) / L) # Size of each item in the bar
+        _i = int(round(L / float(len(rows) + 1))) # Size of each item in the bar
         sys.stdout.write("[%s]" % (" " * L))
         sys.stdout.flush()
         sys.stdout.write("\b" * (L+1))
 
         for i in xrange(len(rows)):
             row = rows[i]
-            (market, btc_amount, price) = parseOrder(row)
-            if market is None:
-                continue
+            (btc_amount, price) = parseOrder(row)
             # For token sells
             if btc_amount > 0:
-                if market not in token_sells:
-                    token_sells[market] = [[btc_amount, price]]
-                else:
-                    token_sells[market].append([btc_amount, price])
+                btc_sells.append([btc_amount, price])
             # For token buys
-            else:
-                if market not in token_buys:
-                    token_buys[market] = [[-btc_amount, price]]
-                else:
-                    token_buys[market].append([-btc_amount, price])
+            elif btc_amount < 0:
+                btc_buys.append([-btc_amount, price])
             # Add to progress bar if needed
             if (i+1) % _i == 0:
                 sys.stdout.write("-")
                 sys.stdout.flush()
         sys.stdout.write("\n")
         # Save the data
-        savePickle(token_buys, 'buys')
-        savePickle(token_sells, 'sells')
-        return (token_buys, token_sells)
+        savePickle(btc_buys, 'coinbase_buys')
+        savePickle(btc_sells, 'coinbase_sells')
+        return (btc_buys, btc_sells)
 
 '''
 Save a pickle file with a dictionary
@@ -116,46 +105,48 @@ Calculate the gain or loss for a given market
 @returns {float}      - in USD; positive for gain, negative for loss
 '''
 def calculateGainLoss(buys, sells):
+    print buys
+    print sells
     gain = 0
     # Calculated the weighted average price for buys
-    pq_buy = 0
-    q_buy = 0
-    pq_sell = 0
-    q_sell = 0
-    for buy in buys:
-        pq_buy += buy[0] * buy[1]
-        q_buy += buy[0]
+    buy_p = buys[0][1]
+    buy_q = buys[0][0]
+    buys.pop(0)
     for sell in sells:
-        pq_sell += sell[0] * sell[1]
-        q_sell += sell[0]
-    # Weighted average prices
-    buy_wap = pq_buy / q_buy
-    sell_wap = pq_sell / q_sell
-    # Quantity we will use is the smaller one
-    q = min(q_sell, q_buy)
-    # Total cost basis is WAP * quantity
-    return (sell_wap - buy_wap) * q
+        while sell[0] > 0:
+            # If we need to load up a new buy, pop the first item
+            if buy_q == 0 and len(buys) > 0:
+                buy_p = buys[0][1]
+                buy_q = buys[0][0]
+                buys.pop(0)
+            # Zero out either the sell or the buy
+            q = min(sell[0], buy_q)
+            # The price is positive for a gain
+            p = sell[1] - buy_p
+            gain += p * q
+            buy_q -= q
+            sell[0] -= q
+    return gain
 
 '''
 Parse the order. It will be added to the appropriate stack.
 @param {list} row    - The row from the csv file.
-@returns {tuple}     - (string, number, bool) market, cost basis, and USD sell
+@returns {tuple}     - (number, number) delta BTC, price in USD
 '''
 def parseOrder(row):
-    market = parseMarket(row[1])
-    # if market != 'AMP':
-    #     return (None, None, None)
-
-    # Row 9 is the cost basis. It is negative for token buys (i.e. selling BTC)
-    # and positive for token sells (i.e. buying BTC)
-    btc_amount = float(row[9])
+    if len(row) < 4:
+        return (0,0)
+    if row[3] != 'BTC':
+        return (0, 0)
+    # Row 2 is the cost basis. It is negative for selling BTC and positive for buying
+    btc_amount = float(row[2])
     # Get the timestamp
     ts = row[0]
     # Get the price of btc at the time
     price = getBtcQuote(ts)
     if not price:
-        return (None, None, None)
-    return (market, btc_amount, price)
+        return (0, 0)
+    return (btc_amount, price)
 
 
 '''
@@ -171,7 +162,7 @@ def getBtcQuote(ts):
     try:
         req = 'https://www.bitmex.com/api/v1/quote?symbol=XBTUSD&count=1&reverse=false&'
         # We will look at a 1 minute interval (only getting 1 data point)
-        _start = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        _start = datetime.strptime(ts[:-6], "%Y-%m-%d %H:%M:%S")
         start = str(_start).replace(" ", "T").replace(":", "%3A")
         req += 'startTime=%s'%(start)
         # Make the request
@@ -184,19 +175,6 @@ def getBtcQuote(ts):
     except:
         # Occasionally, the request will fail. We will just retry.
         return getBtcQuote(ts)
-
-'''
-Get the token of the market (i.e. the numerator). If this is a non-BTC market,
-notify the user and return nothing.
-@param {string} m    - The market (e.g. ETH/BTC)
-@returns {string}    - Can be None. String of the token symbol.
-'''
-def parseMarket(m):
-    if m[4:] != 'BTC':
-        # print 'WARNING: You have an order in a non-BTC market, but this tool does not support that yet.'
-        return None
-    else:
-        return m[:3]
 
 
 if __name__=="__main__":

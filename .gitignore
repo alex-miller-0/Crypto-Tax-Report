@@ -1,2 +1,3 @@
-tradeHistory.csv
+poloniex.csv
+coinbase.csv
 *.pkl
