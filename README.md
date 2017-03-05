@@ -3,6 +3,8 @@ A tool for parsing spreadsheets generated from cryptocurrency exchanges (Coinbas
 
 Running these may take several minutes (but there is a progress bar!) because each reference price (in USD) must be queried using Bitmex's API (throttled at 1 request/sec).
 
+*NOTE: This uses a FIFO stack for all reports and takes into account the entire CSV file in each case. Make sure your CSV files only contain data in the given taxation period (e.g. 01/2016 - 12/2016)!*
+
 ## Poloniex
 
 This assumes that all trades are in BTC markets (those in other markets are thrown out) and that all trades are made in less than 1 year (i.e. subject to short term cap gains).
