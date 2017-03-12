@@ -61,13 +61,13 @@ def collectData(filename):
 
         for i in xrange(len(rows)):
             row = rows[i]
-            (btc_amount, price) = parseOrder(row)
+            (btc_amount, price, ts) = parseOrder(row)
             # For token sells
             if btc_amount > 0:
-                btc_sells.append([btc_amount, price])
+                btc_sells.append([btc_amount, price, ts])
             # For token buys
             elif btc_amount < 0:
-                btc_buys.append([-btc_amount, price])
+                btc_buys.append([-btc_amount, price, ts])
             # Add to progress bar if needed
             if (i+1) % _i == 0:
                 sys.stdout.write("-")
@@ -144,7 +144,7 @@ def parseOrder(row):
     price = getBtcQuote(ts)
     if not price:
         return (0, 0)
-    return (btc_amount, price)
+    return (btc_amount, price, ts)
 
 
 '''
