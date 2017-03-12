@@ -19,26 +19,25 @@ in USD.
 '''
 def main():
     pickles = glob('.*.pkl')
-    if '.buys.pkl' not in pickles or '.sells.pkl' not in pickles:
-        (token_buys, token_sells) = collectData('poloniex.csv')
+    if '.orders.pkl' not in pickles:
+        orders = collectData('poloniex.csv')
     else:
         restart = raw_input('Looks like you have saved data. Use that? (1=yes 0=no) ')
         if restart == '1':
-            token_buys = loadPickle('buys')
-            token_sells = loadPickle('sells')
+            orders = loadPickle('orders')
         else:
-            (token_buys, token_sells) = collectData('poloniex.csv')
+            orders = collectData('poloniex.csv')
     # Calculate gain/loss
     print '\nYour gains and losses:'
     print '===================================='
     gain = 0
-    for m in token_buys:
-       if m in token_sells:
-           print m
-           coin_gain = calculateGainLoss(token_buys[m], token_sells[m])
-           color = RED if coin_gain < 0 else GREEN
+    for m in orders:
+        print m
+        market_orders = sorted(list(orders[m]), key=lambda o: datetime.strptime(o[2], "%Y-%m-%d %H:%M:%S"))
+        coin_gain = calculateGainLoss(orders[m])
+        color = RED if coin_gain < 0 else GREEN
         #    print '%s: %s$%.2f'%(m, color, coin_gain) + END
-           gain += coin_gain
+        gain += coin_gain
     print '------------------------------------'
     color = RED if gain < 0 else GREEN
     print 'Total: %s$%.2f\n'%(color, gain) + END
@@ -52,8 +51,7 @@ Get the data from a tradeHistory csv file.
 def collectData(filename):
     with open(filename, 'rb') as f:
         # Dictionaries of lists of costs/revenues (in USD)
-        token_buys = dict()
-        token_sells = dict()
+        orders = dict()
         # Read the csv file
         reader = csv.reader(f, delimiter=',')
         # Skip headers
@@ -67,43 +65,25 @@ def collectData(filename):
         sys.stdout.flush()
         sys.stdout.write("\b" * (L+1))
 
-        buy_ids = list()
-        sell_ids = list()
+
+        ids = list()
         for i in xrange(len(rows)):
             row = rows[i]
             (market, btc_amount, price, ts, id) = parseOrder(row)
             if market is None:
                 continue
-            # For token sells
-            if btc_amount > 0:
-                if market not in token_sells:
-                    token_sells[market] = [[btc_amount, price, ts, id]]
-                elif id in sell_ids:
-                    for i in range(len(token_sells[market])):
-                        if token_sells[market][i][3] == id:
-                            s = token_sells[market][i]
-                            if s[0] + btc_amount > 0:
-                                new_p = float(s[0] * s[1] + btc_amount*price)/(s[0] + btc_amount)
-                                token_sells[market][i][0] += btc_amount
-                                token_sells[market][i][1] = new_p
-                else:
-                    token_sells[market].append([btc_amount, price, ts, id])
-                    sell_ids.append(id)
-            # For token buys
+            if market not in orders:
+                orders[market] = [[btc_amount, price, ts, id]]
+            elif id in ids:
+                for i in range(len(orders[market])):
+                    if orders[market][i][3] == id:
+                        o = token_buys[market][i]
+                        if abs(o[0] + btc_amount) > 0:
+                            new_p = float(b[0] * b[1] + btc_amount*price)/(b[0] + btc_amount)
+                            orders[market][i][0] += btc_amount
+                            orders[market][i][1] = new_p
             else:
-                if market not in token_buys:
-                    token_buys[market] = [[-btc_amount, price, ts, id]]
-                elif id in buy_ids:
-                    for i in range(len(token_buys[market])):
-                        if token_buys[market][i][3] == id:
-                            b = token_buys[market][i]
-                            if b[0] + btc_amount > 0:
-                                new_p = float(b[0] * b[1] + btc_amount*price)/(b[0] + btc_amount)
-                                token_buys[market][i][0] += btc_amount
-                                token_buys[market][i][1] = new_p
-                else:
-                    token_buys[market].append([-btc_amount, price, ts, id])
-                    buy_ids.append(id)
+                orders[market].append([btc_amount, price, ts, id])
             # Add to progress bar if needed
             if (i+1) % _i == 0:
                 sys.stdout.write("-")
@@ -111,9 +91,8 @@ def collectData(filename):
         sys.stdout.write("\n")
 
         # Save the data
-        savePickle(token_buys, 'buys')
-        savePickle(token_sells, 'sells')
-        return (token_buys, token_sells)
+        savePickle(orders, 'orders')
+        return orders
 
 '''
 Save a pickle file with a dictionary
@@ -137,53 +116,39 @@ def loadPickle(name):
 
 '''
 Calculate the gain or loss for a given market
-@param {list} buys    - list of floats representing amounts (in USD)
-@param {list} sells   - list of floats representing amounts (in USD)
+@param {list} orders    - list of floats representing amounts (in USD) (negative for sells)
 @returns {float}      - in USD; positive for gain, negative for loss
 '''
-def calculateGainLoss(buys, sells):
-    gain = 0
-    # Calculated the weighted average price for buys
-    buy_p = buys[0][1]
-    buy_q = buys[0][0]
-    buy_ts = buys[0][2]
-    buy_id = buys[0][3]
-    buys.pop(0)
-    ts = 0
-    sell_id = 0
-    tmp_cost = 0
-    for sell in sells:
-        ts = sell[2]
-        sell_id = sell[3]
-        tmp_sell = [sell[0], sell[1]]
-        while sell[0] > 0:
-            tmp_cost += buy_p * buy_q
-            # If we need to load up a new buy, pop the first item
-            if buy_q == 0 and len(buys) > 0:
-                buy_p = buys[0][1]
-                buy_q = buys[0][0]
-                buy_ts = buys[0][2]
-                buy_id = buys[0][3]
-                buys.pop(0)
-                tmp_cost += buy_p * buy_q
+def calculateGainLoss(orders):
+    o = orders.pop()
+    tmp_q = o[0]
+    tmp_p = o[1]
+    tmp_ts = o[2]
+    tmp_id = o[3]
+    parsed_orders = [tmp_q * tmp_p]
+    while len(orders) > 0:
+        _o = orders.pop()
+        if tmp_id == _o[3]:
+            tmp_p = (tmp_q*tmp_p + _o[0]*_o[1]) / (tmp_q+_o[0])
+            tmp_q += _o[0]
+            parsed_orders.pop()
+            parsed_orders.append(tmp_p * tmp_q)
+        else:
+            if tmp_q < 0:
+                print '(%s %s) Cost basis: $%.2f'%(tmp_ts, tmp_id, tmp_q*tmp_p)
+            else:
+                print '(%s %s) Sale: $%.2f'%(tmp_ts, tmp_id, tmp_q*tmp_p)
+            parsed_orders.append(tmp_p * tmp_q)
+            tmp_q = _o[0]
+            tmp_p = _o[1]
+            tmp_ts = _o[2]
+            tmp_id = _o[3]
+    if tmp_q < 0:
+        print '(%s %s) Cost basis: $%.2f'%(tmp_ts, tmp_id, tmp_q*tmp_p)
+    else:
+        print '(%s %s) Sale: $%.2f'%(tmp_ts, tmp_id, tmp_q*tmp_p)
 
-            # Zero out either the sell or the buy
-            q = min(sell[0], buy_q)
-            # The price is positive for a gain
-            p = sell[1] - buy_p
-
-            gain += p * q
-            buy_q -= q
-            sell[0] -= q
-            # Escape hatch
-            if len(buys) == 0 and buy_q == 0:
-                return gain
-        # if datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") > datetime.strptime(buy_ts, "%Y-%m-%d %H:%M:%S"):
-        print '(%s) %s Cost Basis: $%.2f'%(buy_ts, buy_id, tmp_cost)
-        tmp_cost = 0
-        print '(%s) %s Sell: $%.2f'%(ts, sell_id, tmp_sell[0]*tmp_sell[1])
-
-    return gain
+    return sum(parsed_orders)
 
 '''
 Parse the order. It will be added to the appropriate stack.
